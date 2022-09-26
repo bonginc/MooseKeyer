@@ -14,3 +14,5 @@
    - +ve terminal of LED in E1
    - -ve termimnal of LED in E4
    - Resistor from B2 to ground rail
+
+   NOTE PINS HAVE BEEN CHANGED IN CODE
