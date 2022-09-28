@@ -21,8 +21,8 @@
 // Sets the code oscilator tone frequency, in hz
 // #define TONE_IN_HZ      500
 
-// WPM keyer defaults to on reset
-#define INITIAL_WPM     17
+// WPM keyer defaults to on rese
+int INITIAL_WPM = 17;
 
 // Set to DIT/DAH to configure paddles the way you want
 #define LEFT_PADDLE     DIT
@@ -36,15 +36,20 @@
 #define LEFT_IN        0
 #define RIGHT_IN       2
 #define TONE_OUT      13
-#define ACTIVITY_LED  16
+int ACTIVITY_LED = 16;
 
 // Button pins
-#define button_one     1
-#define button_two     3
-#define button_three   5
+int button_one = 4;
+int button_two = 5;
+int button_three = 14;
 
 // Variable analog pin
-#define analogPin          A0
+int analogPin = A0;
+
+// sensor values
+int sensorValue;
+int sensorMin = 255;
+int sensorMax = 0;
 
 // States
 #define STATE_KEYER_WAITING        0
@@ -67,7 +72,7 @@
 #define PROSIGN_ERROR '\013'
 
 // Global variables
-int  co_tone           = 600;
+int  co_tone           = 750;
 int  wpm               = 0;
 int  dit_in_ms         = 0;
 int  dah_in_ms         = 0;
@@ -83,14 +88,21 @@ byte ditdah_buffer     = B00000000;          // Accumulates dit/dahs for the cur
 int  ditdah_buffer_len = 0;                  // Total length of current character
 char cw_mapping[256];                        // Stores the associated character for each morse dit/dah set. Keyed on byte value.
 
-void analogPinRead(int values) {
-  values = analogRead(analogPin);
-  Serial.println("analogPinRead ran");
-  Serial.println(values);
-   
-//  setup_for_wpm(values);
+// button init 
+int buttonOne =   0;
+int buttonTwo =   0;
+int buttonThree = 0;
 
-}
+// Variables will change:
+int ledState = HIGH;         // the current state of the output pin
+int buttonState;             // the current reading from the input pin
+int lastButtonState = 0;   // the previous reading from the input pin
+int buttonPushCounter = 0;
+
+// the following variables are unsigned longs because the time, measured in
+// milliseconds, will quickly become a bigger number than can be stored in an int.
+unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
+unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
 
 void debug_log(char *m) {
   Serial.println(m);
@@ -123,8 +135,13 @@ int left = 0;
 int right = 0;
 
 void setup() {
-  pinMode(analogPin, INPUT);
 
+  pinMode(button_one, INPUT_PULLUP);
+  pinMode(button_two, INPUT_PULLUP);
+  pinMode(button_three, INPUT_PULLUP);
+  
+  pinMode(analogPin, INPUT);
+  
   pinMode(LEFT_IN, INPUT);
   pinMode(RIGHT_IN, INPUT);
 
@@ -133,9 +150,8 @@ void setup() {
 
   Serial.begin(115200);
   clear_ditdah_buffer();
-  analogPinRead(INITIAL_WPM);
   setup_for_wpm(INITIAL_WPM);
-  
+
 }
 
 // Append a dit/dah to our current buffer. buffer is 1-prefixed
@@ -261,13 +277,14 @@ char* convert_ditdah_to_char(byte ditdah_buffer) {
 }
 
 void handle_new_char() {
-  Serial.write("Char: ");
+  
   Serial.print(ditdah_to_cw(ditdah_buffer, ditdah_buffer_len));
   Serial.print(" (");
   Serial.print(convert_ditdah_to_char(ditdah_buffer));
-  Serial.println(')');
-
+  Serial.print(')');
+  
   clear_ditdah_buffer();
+  
 }
 
 // Start the appropriate CW pulse for the right paddle
@@ -276,9 +293,59 @@ void start_cw_right() {
   last_pressed = RIGHT_PADDLE;
 }
 
+void buttonSet() {
+  int buttonPushCounter = 0;
+  // read buttonState pin
+  buttonState = digitalRead(analogPin);
+  
+  // compair button state
+  if (buttonState != lastButtonState) {
+    // if state changed add to INITIAL_WPM
+    buttonPushCounter++;
+    Serial.println("on");
+    Serial.print("number of button pushed: ");
+    Serial.println(buttonPushCounter);
+  } else {
+    Serial.println("off");
+  }
+  delay(100L);
+
+  lastButtonState = buttonState;
+
+  if (buttonPushCounter % 4 == 0) {
+    digitalWrite(ACTIVITY_LED, HIGH);
+  } else {
+    digitalWrite(ACTIVITY_LED, LOW);
+  }
+}
+
+void sensorLoop() {
+
+  // read the sensor:
+  sensorValue = analogRead(analogPin);
+
+  // in case the sensor value is outside the range seen during calibration
+  sensorValue = constrain(sensorValue, sensorMin, sensorMax);
+
+  // apply the calibration to the sensor reading
+  sensorValue = map(sensorValue, sensorMin, sensorMax, 0, 255);
+
+  // Testing potentiometer 
+  Serial.println(sensorValue);
+  
+  // fade the LED using the calibrated value:
+  // analogWrite(analogPin, LOW);
+
+}
+
 void loop() {
+
   left = digitalRead(LEFT_IN);
   right = digitalRead(RIGHT_IN);
+
+  buttonOne = digitalRead(button_one);
+  buttonTwo = digitalRead(button_two);
+  buttonThree = digitalRead(button_three);
 
   // Challenge -- single press actualy becomes double press, as long as other paddle is pressed while down.
   switch (state) {
@@ -294,6 +361,7 @@ void loop() {
           cw_was_sent = 0;
         }
       }
+      buttonSet();
       break;
     case STATE_SENDING_CW:
       // Currently sending CW dit/dahs
@@ -322,12 +390,12 @@ void loop() {
       } else {
         start_cw_left();
       }
-
       if (left == LOW || right == LOW) {
         base_state = STATE_KEYER_WAITING;
       }
       break;
   }
+  //sensorLoop();
 }
 
 void add_cw_mapping(char* cw, char mapped_char) {
